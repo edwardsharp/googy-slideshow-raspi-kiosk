@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import urlopen
 import zlib
 
@@ -57,38 +57,46 @@ class Slides(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
         if tag == "section" and "slide-content" in attrs.get("class", "").split():
-            match = re.search(r"background-image:\s*url\(([^)]+)\)", attrs.get("style", ""))
+            match = re.search(r"background-image:\s*url\(['\"]?([^'\")]+)", attrs.get("style", ""))
             if not match:
                 raise ValueError("Google's slide markup changed: missing image URL")
             self.urls.append(match[1])
 
 
-def slide_urls(html, page):
-    """turn the static HTML view's backgrounds into complete slide images."""
+def screen_size():
+    """match slides to the framebuffer so fbi shows them without scaling."""
+    try:
+        width, height = Path("/sys/class/graphics/fb0/virtual_size").read_text().split(",")
+        return int(width), int(height)
+    except (OSError, ValueError):
+        return 1920, 1080
+
+
+def slide_urls(html, page, size):
+    """turn the static HTML view's backgrounds into (preferred, fallback) image URLs.
+
+    checks stay loose so small changes on Google's side don't stop updates; every
+    download must still be a valid PNG before it can replace the cached deck.
+    """
     parser = Slides()
     parser.feed(html)
     if not parser.urls:
         raise ValueError("no slides found in Google's response")
     images, revisions = [], []
     for url in parser.urls:
-        parts = urlsplit(url)
-        if parts.scheme != "https" or parts.netloc != "docs.google.com" or (
-            parts.path != urlsplit(page).path.rsplit("/", 1)[0] + "/viewpage"
-        ):
-            raise ValueError("unexpected Google slide image URL")
+        parts = urlsplit(urljoin(page, url))
+        if parts.scheme != "https":
+            raise ValueError("unexpected slide image URL")
         query = parse_qs(parts.query)
-        try:
-            page_id, revision = query["pageid"][0], query["rev"][0]
-        except (KeyError, IndexError) as error:
-            raise ValueError("Google's slide image parameters changed") from error
-        if not page_id or not revision:
-            raise ValueError("invalid slide ID or revision")
+        # hmac and ts change on every request even when the slide does not.
+        revisions.append(sorted((key, value) for key, value in query.items()
+                                if key not in ("hmac", "ts")))
         # the HTML view draws text over its backgrounds; ask Google to include it in the PNG.
         query["showText"] = ["1"]
-        images.append(urlunsplit(parts._replace(query=urlencode(query, doseq=True))))
-        revisions.append((page_id, revision))
-    if len(set(revisions)) != len(revisions):
-        raise ValueError("duplicate slides in Google's response")
+        # the signature doesn't cover size; Google fits the slide inside w x h (up to 2500 wide).
+        sized = dict(query, w=[str(size[0])], h=[str(size[1])])
+        images.append(tuple(urlunsplit(parts._replace(query=urlencode(q, doseq=True)))
+                            for q in (sized, query)))
     return images, revisions
 
 
@@ -206,18 +214,25 @@ def refresh(config, cache, active):
     """stage a changed deck, then activate it without touching the playing generation."""
     page, seconds = configuration(config)
     deadline = time.monotonic() + 180
-    urls, revisions = slide_urls(fetch(page, deadline).decode("utf-8"), page)
+    size = screen_size()
+    urls, revisions = slide_urls(fetch(page, deadline).decode("utf-8"), page, size)
     # signed image URLs expire/change even when the slides do not; compare stable revisions.
-    key = hashlib.sha256(json.dumps([page, seconds, revisions]).encode()).hexdigest()
+    key = hashlib.sha256(json.dumps([page, seconds, size, revisions]).encode()).hexdigest()
     if active and active.key == key:
         LOG.info("no slideshow changes")
         return active
     prune(cache)
     incoming = Path(tempfile.mkdtemp(prefix=".incoming-", dir=cache))
     try:
-        for index, url in enumerate(urls):
-            data = fetch(url, deadline)
-            check_png(data)
+        for index, (url, fallback) in enumerate(urls):
+            # a second try at Google's own size covers both brief glitches and a rejected size.
+            try:
+                data = fetch(url, deadline)
+                check_png(data)
+            except (OSError, ValueError) as error:
+                LOG.warning("slide %s: %s; retrying at Google's default size", index + 1, error)
+                data = fetch(fallback, deadline)
+                check_png(data)
             save(incoming / f"{index:03}.png", data)
         save(incoming / "deck.json", json.dumps({
             "key": key, "seconds": seconds, "count": len(urls),
@@ -280,7 +295,9 @@ def main():
                     if args.fetch_only:
                         raise
                     if player is None:
-                        print(f"waiting for slideshow. {error}\nretrying in five minutes.", flush=True)
+                        # nothing to show yet (e.g. Wi-Fi still connecting); try again soon.
+                        next_check = time.monotonic() + 30
+                        print(f"waiting for slideshow. {error}\nretrying in 30 seconds.", flush=True)
                 if args.fetch_only:
                     return
             time.sleep(1)

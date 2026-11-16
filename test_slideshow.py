@@ -68,35 +68,44 @@ class ConfigurationTests(unittest.TestCase):
 
 
 class ParsingTests(unittest.TestCase):
-    def test_preserves_order_signature_dimensions_and_includes_text(self):
-        urls, revisions = app.slide_urls(markup(pages=("second", "first")), PAGE)
-        self.assertEqual(revisions, [("second", "1"), ("first", "1")])
-        first = parse_qs(urlsplit(urls[0]).query)
+    def test_preserves_order_and_signature_requests_screen_size_and_text(self):
+        urls, revisions = app.slide_urls(markup(pages=("second", "first")), PAGE, (1920, 1080))
+        self.assertEqual([dict(r)["pageid"] for r in revisions], [["second"], ["first"]])
+        self.assertNotIn("hmac", dict(revisions[0]))
+        sized, fallback = (parse_qs(urlsplit(url).query) for url in urls[0])
         self.assertEqual(
-            {key: first[key] for key in ("pageid", "hmac", "w", "h", "showText")},
+            {key: sized[key] for key in ("pageid", "hmac", "w", "h", "showText")},
             {"pageid": ["second"], "hmac": ["signature"],
-             "w": ["960"], "h": ["540"], "showText": ["1"]},
+             "w": ["1920"], "h": ["1080"], "showText": ["1"]},
         )
+        self.assertEqual((fallback["w"], fallback["h"], fallback["showText"]),
+                         (["960"], ["540"], ["1"]))
 
-    def test_preserves_large_portrait_dimensions_without_an_arbitrary_cap(self):
-        html = markup().replace("w=960&amp;h=540", "w=2160&amp;h=3840")
-        urls, _ = app.slide_urls(html, PAGE)
-        query = parse_qs(urlsplit(urls[0]).query)
-        self.assertEqual((query["w"], query["h"]), (["2160"], ["3840"]))
+    def test_tolerates_quoted_relative_and_unfamiliar_image_urls(self):
+        html = markup().replace("url(" + PAGE.rsplit("/", 1)[0] + "/", "url('").replace(");", "');")
+        urls, _ = app.slide_urls(html, PAGE, (1920, 1080))
+        self.assertTrue(urls[0][0].startswith(PAGE.rsplit("/", 1)[0] + "/viewpage?"))
+        html = markup().replace("docs.google.com", "lh3.googleusercontent.com").replace("pageid", "id")
+        self.assertEqual(len(app.slide_urls(html, PAGE, (1920, 1080))[0]), 2)
+
+    def test_screen_size_reads_framebuffer_or_falls_back(self):
+        with patch.object(app.Path, "read_text", return_value="1280,720\n"):
+            self.assertEqual(app.screen_size(), (1280, 720))
+        with patch.object(app.Path, "read_text", side_effect=FileNotFoundError):
+            self.assertEqual(app.screen_size(), (1920, 1080))
 
     def test_accepts_more_than_two_hundred_slides(self):
-        urls, _ = app.slide_urls(markup(pages=tuple(map(str, range(250)))), PAGE)
+        urls, _ = app.slide_urls(markup(pages=tuple(map(str, range(250)))), PAGE, (1920, 1080))
         self.assertEqual(len(urls), 250)
 
-    def test_rejects_changed_markup_login_pages_and_unexpected_image_hosts(self):
+    def test_rejects_changed_markup_login_pages_and_insecure_image_urls(self):
         for html in (
             "<html>sign in</html>",
             '<section class="slide-content"></section>',
-            markup().replace("docs.google.com", "example.com"),
-            markup(pages=("same", "same")),
+            markup().replace("https://", "http://"),
         ):
             with self.subTest(html=html[:100]), self.assertRaises(ValueError):
-                app.slide_urls(html, PAGE)
+                app.slide_urls(html, PAGE, (1920, 1080))
 
     def test_rejects_truncated_and_corrupt_pngs(self):
         app.check_png(png())
@@ -133,10 +142,23 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(sorted(self.cache.rglob("*")), original_files)
         self.download.assert_called_once()
 
+    def test_failed_sized_slide_falls_back_to_google_default_size(self):
+        def download(url, *_):
+            if url == PAGE:
+                return self.html.encode()
+            if "w=1920" in url:
+                raise OSError("HTTP Error 400")
+            return png()
+        self.download.side_effect = download
+        with patch.object(app, "screen_size", return_value=(1920, 1080)):
+            deck = self.refresh()
+        self.assertEqual(len(list(deck.directory.glob("*.png"))), 2)
+
     def test_failed_partial_download_does_not_replace_playable_deck(self):
         deck = self.refresh()
         self.html = markup(revision="2")
-        self.download.side_effect = [self.html.encode(), png(), b"broken second slide"]
+        broken = b"broken second slide"
+        self.download.side_effect = [self.html.encode(), png(), broken, broken]
         with self.assertRaises(ValueError):
             self.refresh(deck)
         self.assertEqual(app.cached_deck(self.cache), deck)
