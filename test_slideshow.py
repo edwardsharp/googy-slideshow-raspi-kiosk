@@ -1,4 +1,5 @@
 import errno
+import hashlib
 import io
 import json
 import os
@@ -253,16 +254,10 @@ class CatalogueTests(unittest.TestCase):
         packaging = recipe.split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            source = root / "source"
-            source.mkdir()
-            (source / "googy.img.xz").write_bytes(b"image fixture")
-            metadata = {
-                "image_filename": "googy.img.xz",
-                "extract_size": 4096,
-                "extract_sha256": "a" * 64,
-                "image_download_sha256": "b" * 64,
-            }
-            (source / "googy.os.json").write_text(json.dumps(metadata))
+            image = root / "googy.img"
+            image.write_bytes(b"raw image")
+            download = root / "googy.img.xz"
+            download.write_bytes(b"compressed")
             base_url = "https://github.com/example/fork/releases/download/image-42/"
             for base in (None, base_url):
                 with self.subTest(base=base):
@@ -271,20 +266,20 @@ class CatalogueTests(unittest.TestCase):
                     if base:
                         environment["GOOGY_IMAGE_BASE_URL"] = base
                     subprocess.run(
-                        [sys.executable, "-c", packaging, str(root), str(source)],
+                        [sys.executable, "-c", packaging, str(image), str(download)],
                         env=environment, check=True, capture_output=True, text=True,
                     )
-                    catalogue = json.loads((root / "deploy/os.json").read_text())
-                    entry, = catalogue["os_list"]
-                    expected_url = (
-                        base + "googy.img.xz" if base
-                        else (root / "deploy/googy.img.xz").as_uri()
+                    entry, = json.loads((root / "os.json").read_text())["os_list"]
+                    self.assertEqual(
+                        entry["url"], base + "googy.img.xz" if base else download.as_uri()
                     )
-                    self.assertEqual(entry["url"], expected_url)
                     self.assertEqual(entry["init_format"], "cloudinit-rpi")
-                    for field in ("extract_size", "extract_sha256", "image_download_sha256"):
-                        self.assertEqual(entry[field], metadata[field])
-                    self.assertEqual((root / "deploy/googy.img.xz").read_bytes(), b"image fixture")
+                    self.assertEqual(entry["extract_size"], len(b"raw image"))
+                    self.assertEqual(entry["extract_sha256"], hashlib.sha256(b"raw image").hexdigest())
+                    self.assertEqual(entry["image_download_size"], len(b"compressed"))
+                    self.assertEqual(
+                        entry["image_download_sha256"], hashlib.sha256(b"compressed").hexdigest()
+                    )
 
 
 if __name__ == "__main__":

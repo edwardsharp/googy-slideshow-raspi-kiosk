@@ -36,9 +36,10 @@ the workflow also saves `googy-sd-card` as an Actions artifact.
 
 ## local image build
 
-on Linux with Docker, Git, and Python 3, run `bash build-image.sh`.
-this uses pinned pi-gen to build a 32-bit Raspberry Pi OS Lite image.
-the builder lives in `.build/`; the image and Imager catalogue appear in `deploy/`.
+on Linux with `qemu-user-static`, `parted`, and Python 3, run `sudo bash build-image.sh`.
+this downloads the pinned official 32-bit Raspberry Pi OS Lite image, adds the player,
+and appends the cache partition. downloads and work files live in `.build/`;
+the image and Imager catalogue appear in `deploy/`.
 local catalogues use absolute `file:///...` image URLs; update `url` if moved.
 
 ## use custom file

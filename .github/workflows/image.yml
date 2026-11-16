@@ -20,7 +20,7 @@ jobs:
   image:
     if: github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 60
     env:
       IMAGE_TAG: image-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -33,7 +33,10 @@ jobs:
       - name: build Raspberry Pi OS Lite image
         env:
           GOOGY_IMAGE_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.IMAGE_TAG }}
-        run: bash build-image.sh
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static parted
+          sudo --preserve-env=GOOGY_IMAGE_BASE_URL bash build-image.sh
       - uses: actions/upload-artifact@v4
         with:
           name: googy-sd-card

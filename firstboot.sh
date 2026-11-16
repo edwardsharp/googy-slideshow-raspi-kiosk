@@ -13,6 +13,8 @@ cloud-init status --wait --long > /boot/firmware/googy-setup.txt 2>&1 || true
 # Imager's user setup re-enables the tty1 login and resets the default target.
 systemctl mask getty@tty1.service
 systemctl set-default googy.target
+# the overlay root can't be remounted; skip that unit once read-only boots begin.
+systemctl mask systemd-remount-fs.service
 # save provisioning results once; rerunning cloud-init in the RAM overlay would lose writes.
 touch /etc/cloud/cloud-init.disabled
 sed -i '\|[[:space:]]/boot/firmware[[:space:]]| { /defaults,ro/! s/defaults/defaults,ro/; }' /etc/fstab
