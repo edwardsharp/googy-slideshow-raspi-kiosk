@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# build runs on the Linux host; install/partition are pi-gen hooks; firstboot runs on the Pi.
-# keeping them here lets the image carry its own setup code without extra helper scripts.
+# build runs on the Linux host; install/partition are pi-gen hooks run during the build.
+# firstboot.sh is the only part that runs on the Pi.
 build() {
     if [ "$(uname -s)" != Linux ]; then
         echo "build on Linux, or use the GitHub Actions image workflow; flash the result on any computer." >&2
@@ -27,26 +27,28 @@ build() {
     fi
     # stage2 is the Lite OS. our extra stage installs the player before image export.
     mkdir -p "$builder/stage-googy/00-googy/files" "$builder/export-image/04-slideshow-cache"
-    cp "$repo"/{slideshow.py,slideshow.service,image.sh} "$builder/stage-googy/00-googy/files/"
+    cp "$repo"/{slideshow.py,slideshow.service,firstboot.sh,build-image.sh} "$builder/stage-googy/00-googy/files/"
     cp "$builder/stage2/prerun.sh" "$builder/stage-googy/prerun.sh"
     printf 'IMG_SUFFIX=""\n' > "$builder/stage-googy/EXPORT_IMAGE"
     printf 'fbi overlayroot\n' > "$builder/stage-googy/00-googy/00-packages"
-    printf '#!/bin/bash -e\nbash files/image.sh install\n' > "$builder/stage-googy/00-googy/00-run.sh"
+    printf '#!/bin/bash -e\nbash files/build-image.sh install\n' > "$builder/stage-googy/00-googy/00-run.sh"
     # the export hook adds the cache after boot/root exist, before final compression/hashing.
     cat > "$builder/export-image/04-slideshow-cache/00-run.sh" <<'EOF'
 #!/bin/bash -e
-bash "${BASE_DIR}/stage-googy/00-googy/files/image.sh" partition
+bash "${BASE_DIR}/stage-googy/00-googy/files/build-image.sh" partition
 EOF
     chmod +x "$builder/stage-googy/00-googy/00-run.sh" \
         "$builder/export-image/04-slideshow-cache/00-run.sh"
     # export only the customized image, not a second, unmodified Lite image.
     touch "$builder/stage2/SKIP_IMAGES"
+    # xz level 1 compresses several times faster than the default level 6, for a slightly larger file.
     cat > "$builder/config" <<'EOF'
 IMG_NAME=googy
 PI_GEN_RELEASE="googy slideshow"
 RELEASE=trixie
 STAGE_LIST="stage0 stage1 stage2 stage-googy"
 DEPLOY_COMPRESSION=xz
+COMPRESSION_LEVEL=1
 ENABLE_CLOUD_INIT=1
 TARGET_HOSTNAME=googy
 LOCALE_DEFAULT=en_US.UTF-8
@@ -86,7 +88,7 @@ install_image() {
     # pi-gen supplies ROOTFS_DIR and on_chroot: file edits target the image, not the host.
     install -d "$ROOTFS_DIR/usr/local/lib/googy" "$ROOTFS_DIR/var/lib/googy" \
         "$ROOTFS_DIR/etc/systemd/journald.conf.d" "$ROOTFS_DIR/etc/cloud/cloud.cfg.d"
-    install -m 644 files/{slideshow.py,image.sh} "$ROOTFS_DIR/usr/local/lib/googy/"
+    install -m 644 files/{slideshow.py,firstboot.sh} "$ROOTFS_DIR/usr/local/lib/googy/"
     install -m 644 files/slideshow.service "$ROOTFS_DIR/etc/systemd/system/"
     # cloud-final runs after multi-user.target; don't make that target wait for our player.
     cat > "$ROOTFS_DIR/etc/systemd/system/googy.target" <<'EOF'
@@ -109,7 +111,7 @@ RequiresMountsFor=/boot/firmware
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash /usr/local/lib/googy/image.sh firstboot
+ExecStart=/bin/bash /usr/local/lib/googy/firstboot.sh
 StandardOutput=journal+console
 StandardError=journal+console
 TimeoutStartSec=10min
@@ -140,12 +142,13 @@ EOF
     # keep the console unblanked; leave output selection and display modes to the driver.
     sed -i 's/$/ consoleblank=0 vt.global_cursor_default=0 quiet loglevel=3/' \
         "$ROOTFS_DIR/boot/firmware/cmdline.txt"
-    # reserve tty1 for playback; provisioning comes from Imager rather than a local wizard.
+    # provisioning comes from Imager rather than a local wizard; firstboot.sh frees tty1 later,
+    # because Imager's user setup fails if the tty1 login is already masked.
     # disable disk swap/background package updates and check for systemd ordering cycles.
     on_chroot <<'EOF'
 systemctl enable slideshow.service
 systemctl set-default googy.target
-systemctl mask getty@tty1.service userconfig.service rpi-resize.service \
+systemctl mask userconfig.service rpi-resize.service \
     rpi-swap.service dphys-swapfile.service apt-daily.timer apt-daily-upgrade.timer
 systemd-analyze verify /etc/systemd/system/googy.target
 EOF
@@ -166,28 +169,9 @@ partition_cache() {
         -E "offset=$start,lazy_itable_init=0,lazy_journal_init=0" "$image" "$((size / 4096))"
 }
 
-firstboot() {
-    # don't freeze a partly configured user/network setup, or require Google to be reachable.
-    cloud-init status --wait
-    # a previous attempt may have made boot read-only before power was interrupted.
-    mount -o remount,rw /boot/firmware
-    # save provisioning results once; rerunning cloud-init in the RAM overlay would lose writes.
-    touch /etc/cloud/cloud-init.disabled
-    sed -i '\|[[:space:]]/boot/firmware[[:space:]]| { /defaults,ro/! s/defaults/defaults,ro/; }' /etc/fstab
-    # recurse=0 leaves the separate cache writable, rather than overlaying it in RAM.
-    if ! grep -q 'overlayroot=tmpfs:recurse=0' /boot/firmware/cmdline.txt; then
-        sed -i 's/^/overlayroot=tmpfs:recurse=0 /' /boot/firmware/cmdline.txt
-    fi
-    # these settings take effect next boot; flush them before requesting that reboot.
-    sync
-    echo "setup complete. rebooting into the read-only slideshow."
-    systemctl --no-block reboot
-}
-
 case "${1:-build}" in
     build) build ;;
     install) install_image ;;
     partition) partition_cache ;;
-    firstboot) firstboot ;;
-    *) echo "usage: bash image.sh [build]" >&2; exit 1 ;;
+    *) echo "usage: bash build-image.sh [build]" >&2; exit 1 ;;
 esac

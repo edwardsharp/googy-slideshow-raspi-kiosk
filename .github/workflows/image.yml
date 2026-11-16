@@ -5,7 +5,8 @@ on:
     paths:
       - slideshow.py
       - slideshow.service
-      - image.sh
+      - build-image.sh
+      - firstboot.sh
       - .github/workflows/image.yml
 
 permissions:
@@ -27,12 +28,12 @@ jobs:
       - name: test
         run: |
           python3 -m unittest -v
-          bash -n image.sh
-          shellcheck image.sh
+          bash -n build-image.sh firstboot.sh
+          shellcheck build-image.sh firstboot.sh
       - name: build Raspberry Pi OS Lite image
         env:
           GOOGY_IMAGE_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.IMAGE_TAG }}
-        run: bash image.sh
+        run: bash build-image.sh
       - uses: actions/upload-artifact@v4
         with:
           name: googy-sd-card

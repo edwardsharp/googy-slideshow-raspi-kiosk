@@ -249,7 +249,7 @@ class RuntimeTests(unittest.TestCase):
 class CatalogueTests(unittest.TestCase):
     def test_local_and_fork_release_catalogues_keep_image_metadata(self):
         # exercise the recipe's Python packaging step without building an entire Linux image.
-        recipe = Path(__file__).with_name("image.sh").read_text()
+        recipe = Path(__file__).with_name("build-image.sh").read_text()
         packaging = recipe.split("<<'PY'\n", 1)[1].split("\nPY", 1)[0]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

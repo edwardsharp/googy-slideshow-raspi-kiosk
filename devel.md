@@ -2,8 +2,8 @@
 
 ```sh
 python3 -m unittest -v
-bash -n image.sh
-shellcheck image.sh
+bash -n build-image.sh firstboot.sh
+shellcheck build-image.sh firstboot.sh
 python3 slideshow.py --url-file /path/to/slideshow.txt --cache /path/to/cache --fetch-only
 ```
 
@@ -36,7 +36,7 @@ the workflow also saves `googy-sd-card` as an Actions artifact.
 
 ## local image build
 
-on Linux with Docker, Git, and Python 3, run `bash image.sh`.
+on Linux with Docker, Git, and Python 3, run `bash build-image.sh`.
 this uses pinned pi-gen to build a 32-bit Raspberry Pi OS Lite image.
 the builder lives in `.build/`; the image and Imager catalogue appear in `deploy/`.
 local catalogues use absolute `file:///...` image URLs; update `url` if moved.
@@ -57,6 +57,8 @@ don't select the raw image with **Use custom**: the catalogue supplies
 test initial setup, HDMI, peak RAM during updates, offline reboot, read-only
 mounts, and power-cut recovery on the actual Pi before deployment.
 fetch tests don't verify the image or hardware.
+first boot saves cloud-init's status report to `googy-setup.txt` on the card's
+boot partition; read it on any computer if setup looks wrong.
 
 the display driver chooses the HDMI mode from the connected monitor's EDID.
 `fbi` uses its default cache and preloading behavior; measure peak RAM before
