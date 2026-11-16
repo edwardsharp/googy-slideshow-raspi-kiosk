@@ -1,0 +1,51 @@
+name: build SD card image
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - slideshow.py
+      - slideshow.service
+      - image.sh
+      - .github/workflows/image.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sd-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      IMAGE_TAG: image-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: test
+        run: |
+          python3 -m unittest -v
+          bash -n image.sh
+          shellcheck image.sh
+      - name: build Raspberry Pi OS Lite image
+        env:
+          GOOGY_IMAGE_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.IMAGE_TAG }}
+        run: bash image.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: googy-sd-card
+          path: deploy/
+          if-no-files-found: error
+          compression-level: 0
+      - name: publish image and Imager catalogue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$IMAGE_TAG" deploy/*.img.xz deploy/os.json \
+            --target "$GITHUB_SHA" --title "googy SD image $IMAGE_TAG" \
+            --notes "32-bit Raspberry Pi OS Lite slideshow image, built from $GITHUB_SHA." \
+            --draft
+          gh release edit "$IMAGE_TAG" --draft=false --latest

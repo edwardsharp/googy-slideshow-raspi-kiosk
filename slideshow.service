@@ -1,0 +1,31 @@
+[Unit]
+Description=googy slides kiosk
+After=googy-firstboot.service systemd-user-sessions.service
+Requires=googy-firstboot.service
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+RequiresMountsFor=/boot/firmware /var/lib/googy
+StartLimitIntervalSec=0
+
+[Service]
+ExecStartPre=/usr/bin/chvt 1
+ExecStart=/usr/bin/python3 /usr/local/lib/googy/slideshow.py
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=10
+TimeoutStopSec=10
+KillMode=mixed
+Environment=PYTHONDONTWRITEBYTECODE=1
+ProtectSystem=strict
+ReadWritePaths=/var/lib/googy
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=googy.target
