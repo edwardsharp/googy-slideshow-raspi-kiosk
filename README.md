@@ -1,8 +1,9 @@
 # googy-slideshow-raspi-kiosk
 
-googy slides on a Raspberry Pi's HDMI console.
-
-no browser, desktop, keyboard, or SSH required.
+googy slidez on a Raspberry Pi. use
+[**Raspberry Pi Imager**](https://www.raspberrypi.com/software/) app to build an
+sd card + add your google slides url to slideshow.txt; then plug into a
+raspberry pi and you're all set, easy peasy!
 
 ## SD card setup
 
@@ -35,9 +36,9 @@ no browser, desktop, keyboard, or SSH required.
 checks for changes every five minutes and plays cached slides offline. static
 slides only; whole-second timing; always loops. the OS is read-only, with a
 separate writable cache. this reduces, but cannot eliminate, power-cut
-corruption. Google's image interface is undocumented and may change.
+corruption. Google's image interface is undocumented and ~~may~~ will probably change.
 
-[development, image builds, and alternative setup](devel.md)
+[_for development, image builds, and alternative setup see:_ **devel.md**](devel.md)
 
 ---
 
