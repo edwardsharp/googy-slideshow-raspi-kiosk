@@ -40,7 +40,7 @@ cp /etc/resolv.conf "$root/etc/resolv.conf"
 
 install -d "$root/usr/local/lib/googy" "$root/var/lib/googy" \
     "$root/etc/systemd/journald.conf.d" "$root/etc/cloud/cloud.cfg.d" "$root/etc/rpi/swap.conf.d"
-install -m 644 "$repo"/{slideshow.py,firstboot.sh} "$root/usr/local/lib/googy/"
+install -m 644 "$repo"/{slideshow.py,slides_png.py,slides_pdf.py,firstboot.sh} "$root/usr/local/lib/googy/"
 install -m 644 "$repo/slideshow.service" "$root/etc/systemd/system/"
 # cloud-final runs after multi-user.target; don't make that target wait for our player.
 cat > "$root/etc/systemd/system/googy.target" <<'EOF'
@@ -105,7 +105,7 @@ sed -i 's/$/ consoleblank=0 vt.global_cursor_default=0 quiet loglevel=3/' "$root
 # disable background package updates and check for systemd ordering cycles.
 chroot "$root" /bin/bash -euo pipefail <<'EOF'
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fbi overlayroot
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fbi ghostscript overlayroot
 apt-get clean
 systemctl enable slideshow.service
 systemctl set-default googy.target

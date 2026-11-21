@@ -12,6 +12,32 @@ other stuff. optional SSH logs: `journalctl -u slideshow -u googy-firstboot -b`.
 the service runs as root for console access, with filesystem writes restricted
 to the cache.
 
+## slideshow sources
+
+here's an example slideshow: https://docs.google.com/presentation/d/e/2PACX-1vT3yjbwXlbP3pDD-LUF0625sQs5p1Y_0Z7BAeIoWq6N83eerVWHnCVRhth-XHNxosYqCoLkevTtAR4r/pub?start=true&loop=true&delayms=5000
+
+`slides_png.py` finds the published page's `/viewpage` image URLs by their slide
+IDs and revisions, regardless of the surrounding tag or class. it adds text and
+requests the screen size. `slides_pdf.py` downloads a PDF from the optional
+original share link and uses Ghostscript (`gs`) to render its pages. both feed
+the same cache and player in `slideshow.py`: a complete, validated deck replaces
+the old one only after all pages are ready. PNG is tried first on every update;
+if it fails, PDF is tried when a share link is configured.
+the PDF is an export of the original file, so it may differ from the published
+view if publishing settings or changes aren't in sync.
+the image parser cannot detect a slide missing entirely from Google's HTML.
+
+to test your own deck, put its published URL and optional original share URL on
+separate lines in `slideshow.txt` (see the README for PDF permissions), then run:
+
+```sh
+GOOGY_LIVE_TEST=1 GOOGY_TEST_URL_FILE=/path/to/slideshow.txt python3 -m unittest -v test_slideshow.LiveSourceTests
+```
+
+this needs internet and Ghostscript for PDF tests. without a share URL, PDF tests
+are skipped. omit `GOOGY_TEST_URL_FILE` to test the example decks instead.
+ordinary `python3 -m unittest -v` tests run without internet or Ghostscript.
+
 ## github image builds
 
 pushes changing the player, service, image recipe, or workflow on the default

@@ -29,6 +29,11 @@ raspberry pi and you're all set, easy peasy!
    **File -> Share -> Publish to the web** link and save the file. _note:_ keep
    the full URL: `delayms=5000` means five seconds per slide. verify it opens
    without signing in.
+   optionally, paste the original Google Slides share link on a second line to
+   enable a PDF fallback if the published image links stop working. on that same
+   original presentation, set **Share -> General access -> Anyone with the
+   link -> Viewer** and, under **Share -> Settings**, allow viewers to download.
+   publishing to the web alone does not grant these permissions.
 4. safely eject sd card and insert into raspberry pi, connect HDMI, and power
    on. allow several minutes, first boot saves the settings and reboots once.
    **don't interrupt initial setup!**
@@ -36,7 +41,30 @@ raspberry pi and you're all set, easy peasy!
 checks for changes every five minutes and plays cached slides offline. static
 slides only; whole-second timing; always loops. the OS is read-only, with a
 separate writable cache. this reduces, but cannot eliminate, power-cut
-corruption. Google's image interface is undocumented and ~~may~~ will probably change.
+corruption. Google's image and PDF export interfaces are undocumented and ~~may~~ will probably change.
+
+## error codes
+
+| code    | meaning                                                          |
+| ------- | ---------------------------------------------------------------- |
+| `E01`   | other slideshow update failure                                   |
+| `E02`   | slideshow viewer failed                                          |
+| `E03`   | cache could not be initialized                                   |
+| `E04-F` | slideshow file missing, unreadable, or has wrong number of lines |
+| `E04-L` | slideshow link invalid                                           |
+| `E04-T` | slideshow timing missing or invalid                              |
+| `E05-*` | DNS lookup failed                                                |
+| `E06-*` | network unavailable or no route                                  |
+| `E07-*` | connection failed or download timed out                          |
+| `E08-*` | server returned an HTTP error                                    |
+| `E09-*` | published slideshow or PNG images invalid                        |
+| `E10-*` | PDF fallback or rendering failed                                 |
+| `E11`   | cache storage failed during an update                            |
+| `E12`   | PDF access denied; check sharing and download permissions        |
+
+cached slides keep playing without an error, even if updates fail. the failure
+count resets on a successful check or restart. network codes describe the
+observed error; they don't prove whether the internet or Google is down.
 
 [_for development, image builds, and alternative setup see:_ **devel.md**](devel.md)
 

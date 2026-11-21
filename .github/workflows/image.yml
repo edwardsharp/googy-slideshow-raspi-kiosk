@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - slideshow.py
+      - slides_png.py
+      - slides_pdf.py
       - slideshow.service
       - build-image.sh
       - firstboot.sh
