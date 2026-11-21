@@ -28,9 +28,15 @@ if ! echo "$BASE_SHA256  $base" | sha256sum --check --status; then
 fi
 xz -dc "$base" > "$image"
 
+# the official root partition is too small for package installation and initramfs updates.
+truncate -s +1G "$image"
+parted --script "$image" resizepart 2 100%
+
 # mount the image's boot and root partitions; the trap unmounts even if a step fails.
 loop="$(losetup --partscan --show --find "$image")"
 trap 'umount -R "$root" 2>/dev/null || true; losetup -d "$loop"' EXIT
+e2fsck -f -p "${loop}p2" || [ "$?" -eq 1 ]
+resize2fs "${loop}p2"
 mount "${loop}p2" "$root"
 mount "${loop}p1" "$root/boot/firmware"
 for fs in proc sys dev dev/pts; do mount --bind "/$fs" "$root/$fs"; done

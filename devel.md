@@ -61,7 +61,8 @@ the github actions workflow saves `googy-sd-card` as an actions artifact.
 
 on kinux with `qemu-user-static`, `parted`, and python 3, run
 `sudo bash build-image.sh`. this downloads the pinned official 32-bit Raspberry
-Pi OS Lite image, adds the slideshow player, and appends the cache partition.
+Pi OS Lite image, expands its root partition, adds the slideshow player, and
+appends the cache partition.
 downloads and work files live in `.build/`; the image and Imager catalogue
 appear in `deploy/`. local catalogues use absolute `file:///...` image URLs;
 update `url` if moved.
